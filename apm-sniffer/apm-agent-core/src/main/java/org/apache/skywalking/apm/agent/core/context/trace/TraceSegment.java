@@ -138,6 +138,10 @@ public class TraceSegment {
         this.ignore = ignore;
     }
 
+    public List<AbstractTracingSpan> getSpans() {
+        return this.spans;
+    }
+
     /**
      * This is a high CPU cost method, only called when sending to collector or test cases.
      *

@@ -346,4 +346,8 @@ public abstract class AbstractTracingSpan implements AbstractSpan {
     public void skipAnalysis() {
         this.skipAnalysis = true;
     }
+
+    public boolean isErrorOccurred() {
+        return this.errorOccurred;
+    }
 }

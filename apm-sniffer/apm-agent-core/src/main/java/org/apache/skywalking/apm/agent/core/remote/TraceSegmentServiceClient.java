@@ -29,6 +29,7 @@ import org.apache.skywalking.apm.agent.core.commands.CommandService;
 import org.apache.skywalking.apm.agent.core.conf.Config;
 import org.apache.skywalking.apm.agent.core.context.TracingContext;
 import org.apache.skywalking.apm.agent.core.context.TracingContextListener;
+import org.apache.skywalking.apm.agent.core.context.trace.AbstractTracingSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.TraceSegment;
 import org.apache.skywalking.apm.agent.core.logging.api.ILog;
 import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
@@ -53,6 +54,8 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
     private volatile DataCarrier<TraceSegment> carrier;
     private volatile TraceSegmentReportServiceGrpc.TraceSegmentReportServiceStub serviceStub;
     private volatile GRPCChannelStatus status = GRPCChannelStatus.DISCONNECT;
+
+    private String postTraceEnv = System.getenv("PostTrace");
 
     @Override
     public void prepare() {
@@ -119,9 +122,20 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
             });
 
             try {
-                for (TraceSegment segment : data) {
-                    SegmentObject upstreamSegment = segment.transform();
-                    upstreamSegmentStreamObserver.onNext(upstreamSegment);
+                // insert h10g code here
+                if (postTraceEnv != null) {
+                    LOGGER.info("PostTrace Agent Only Collects Errors");
+                    for (TraceSegment segment: data) {
+                        if (checkSegmentReportable(segment)) {
+                            SegmentObject upstreamSegment = segment.transform();
+                            upstreamSegmentStreamObserver.onNext(upstreamSegment);
+                        }
+                    }
+                } else {
+                    for (TraceSegment segment : data) {
+                        SegmentObject upstreamSegment = segment.transform();
+                        upstreamSegmentStreamObserver.onNext(upstreamSegment);
+                    }
                 }
             } catch (Throwable t) {
                 LOGGER.error(t, "Transform and send UpstreamSegment to collector fail.");
@@ -136,6 +150,15 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
         }
 
         printUplinkStatus();
+    }
+
+    private boolean checkSegmentReportable(TraceSegment segment) {
+        for (AbstractTracingSpan span : segment.getSpans()) {
+            if (span.isErrorOccurred()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void printUplinkStatus() {
