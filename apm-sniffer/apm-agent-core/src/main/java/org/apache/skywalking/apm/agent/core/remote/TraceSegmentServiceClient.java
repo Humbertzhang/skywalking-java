@@ -20,10 +20,19 @@ package org.apache.skywalking.apm.agent.core.remote;
 
 import io.grpc.Channel;
 import io.grpc.stub.StreamObserver;
+
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
 import org.apache.skywalking.apm.agent.core.boot.BootService;
 import org.apache.skywalking.apm.agent.core.boot.DefaultImplementor;
+import org.apache.skywalking.apm.agent.core.boot.DefaultNamedThreadFactory;
 import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
 import org.apache.skywalking.apm.agent.core.commands.CommandService;
 import org.apache.skywalking.apm.agent.core.conf.Config;
@@ -55,7 +64,52 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
     private volatile TraceSegmentReportServiceGrpc.TraceSegmentReportServiceStub serviceStub;
     private volatile GRPCChannelStatus status = GRPCChannelStatus.DISCONNECT;
 
+    // Start PostTraceWork Init Codes
+    private Map<String, TraceSegment> postTraceMap = new HashMap<>();
     private String postTraceEnv = System.getenv("PostTrace");
+    private int postTraceQueryInterval = this.getIntEnvWithDefault("PostTraceQueryInterval", 10);
+    private int postTraceDeleteInterval = this.getIntEnvWithDefault("PostTraceDeleteInterval", 300);
+    private String postTraceCenterURL = System.getenv("PostTraceCenterURL");
+
+    private final static ScheduledExecutorService POST_TRACE_SCHEDULE = Executors.newSingleThreadScheduledExecutor(
+            new DefaultNamedThreadFactory("POST_TRACE_SCHEDULE"));
+
+    private int getIntEnvWithDefault(String key, int defaultValue) {
+        int result;
+        try {
+            result = Integer.parseInt(System.getenv(key));
+        } catch (NumberFormatException e) {
+            result = defaultValue;
+        }
+        return result;
+    }
+
+    private void PostTraceQueryAndReport(String centerURL, Map<String, TraceSegment> postTraceMap) {
+        // 1. Query Error TraceIds
+        // TODO: Real query traceId
+        List<String> errorTraceIds = new ArrayList<>();
+        errorTraceIds.add("111222333");
+
+        // 2. Send Error Segments
+        Set<String> traceIdKeySet = postTraceMap.keySet();
+        for (String traceId: errorTraceIds) {
+            if (traceIdKeySet.contains(traceId)) {
+                TraceSegment segment = postTraceMap.get(traceId);
+                List<TraceSegment> data = new ArrayList<>();
+                data.add(segment);
+                data.add(null);
+
+                // a hack method is used for sending PostTrace Error Segment in consume.
+                this.consume(data);
+            }
+        }
+    }
+
+    private void deleteTraceInTraceMap(String traceId, Map<String, TraceSegment> postTraceMap) {
+        postTraceMap.remove(traceId);
+    }
+
+    // End PostTraceWork Init Codes
 
     @Override
     public void prepare() {
@@ -69,6 +123,14 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
         segmentAbandonedCounter = 0;
         carrier = new DataCarrier<>(CHANNEL_SIZE, BUFFER_SIZE, BufferStrategy.IF_POSSIBLE);
         carrier.consume(this, 1);
+
+        // PostTrace Schedule PostTraceQueryAndReport Task
+        POST_TRACE_SCHEDULE.scheduleAtFixedRate(
+                () -> this.PostTraceQueryAndReport(postTraceCenterURL, postTraceMap),
+                120,
+                postTraceQueryInterval,
+                TimeUnit.SECONDS
+        );
     }
 
     @Override
@@ -123,15 +185,50 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
 
             try {
                 // insert h10g code here
+
+                // PostTrace is active
                 if (postTraceEnv != null) {
-                    LOGGER.info("PostTrace Agent Only Collects Errors");
-                    for (TraceSegment segment: data) {
-                        if (checkSegmentReportable(segment)) {
+                    boolean sentSegment = false;
+
+                    // A hack method for PostTrace.
+                    // If the last element of data is Null, means it is PostTrace Send Error Segment Requests
+                    // then just send it without check
+                    if (data.size() > 1 & data.get(data.size() - 1) == null) {
+                        // remove last null data
+                        data.remove(data.size() - 1);
+
+                        // send error segment
+                        for (TraceSegment segment : data) {
                             SegmentObject upstreamSegment = segment.transform();
                             upstreamSegmentStreamObserver.onNext(upstreamSegment);
                         }
+                        // set flag, so that do not check segment.
+                        sentSegment = true;
+                    }
+
+                    if (sentSegment) {
+                        LOGGER.info("PostTrace module has sent error Segment to OAP Server");
+                    } else {
+                        LOGGER.info("check if segment is error");
+                        for (TraceSegment segment: data) {
+                            if (checkSegmentReportable(segment)) {
+                                SegmentObject upstreamSegment = segment.transform();
+                                upstreamSegmentStreamObserver.onNext(upstreamSegment);
+                            } else {
+                                // Put Not Error TraceSegment in postTraceMap.
+                                this.postTraceMap.put(segment.getRelatedGlobalTrace().getId(), segment);
+
+                                // Delete Normal TraceSegment in fixed time
+                                POST_TRACE_SCHEDULE.schedule(
+                                        () -> this.deleteTraceInTraceMap(segment.getRelatedGlobalTrace().getId(), postTraceMap),
+                                        this.postTraceDeleteInterval,
+                                        TimeUnit.SECONDS
+                                );
+                            }
+                        }
                     }
                 } else {
+                    // PostTrace is not active.
                     for (TraceSegment segment : data) {
                         SegmentObject upstreamSegment = segment.transform();
                         upstreamSegmentStreamObserver.onNext(upstreamSegment);
