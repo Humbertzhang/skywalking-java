@@ -18,8 +18,11 @@
 
 package org.apache.skywalking.apm.agent.core.remote;
 
+import com.google.gson.JsonObject;
 import io.grpc.Channel;
 import io.grpc.stub.StreamObserver;
+
+import com.google.gson.Gson;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -29,6 +32,13 @@ import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
+import okhttp3.OkHttpClient;
+import okhttp3.ResponseBody;
+import okhttp3.Response;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.MediaType;
 
 import org.apache.skywalking.apm.agent.core.boot.BootService;
 import org.apache.skywalking.apm.agent.core.boot.DefaultImplementor;
@@ -71,6 +81,15 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
     private int postTraceDeleteInterval = this.getIntEnvWithDefault("PostTraceDeleteInterval", 300);
     private String postTraceCenterURL = System.getenv("PostTraceCenterURL");
 
+    // Request Body, Response Body and Http client
+    private OkHttpClient okHttpClient = new OkHttpClient();
+    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
+
+    // class for PostTrace Query TraceIds
+    public class TraceIdListResponse {
+        public List<String> traceIds;
+    }
+
     private final static ScheduledExecutorService POST_TRACE_SCHEDULE = Executors.newSingleThreadScheduledExecutor(
             new DefaultNamedThreadFactory("POST_TRACE_SCHEDULE"));
 
@@ -84,11 +103,32 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
         return result;
     }
 
-    private void PostTraceQueryAndReport(String centerURL, Map<String, TraceSegment> postTraceMap) {
+    private void PostTraceQueryAndReport(Map<String, TraceSegment> postTraceMap) {
         // 1. Query Error TraceIds
-        // TODO: Real query traceId
-        List<String> errorTraceIds = new ArrayList<>();
-        errorTraceIds.add("111222333");
+        List<String> errorTraceIds = null;
+
+        Request request = new Request.Builder()
+                .url(this.postTraceCenterURL + "/traceids")
+                .get()
+                .build();
+
+        try {
+            Response response = okHttpClient.newCall(request).execute();
+            if (response.isSuccessful()) {
+                Gson gson = new Gson();
+                ResponseBody responseBody = response.body();
+                TraceIdListResponse traceIdList = gson.fromJson(responseBody.string(), TraceIdListResponse.class);
+                errorTraceIds = traceIdList.traceIds;
+                LOGGER.debug("query traceids successful, result is:" + traceIdList);
+            }
+        } catch (Exception e) {
+            LOGGER.warn("Query traceIds error, exception is " + e.toString());
+        }
+
+        if (errorTraceIds == null) {
+            LOGGER.warn("query traceIds error");
+            return;
+        }
 
         // 2. Send Error Segments
         Set<String> traceIdKeySet = postTraceMap.keySet();
@@ -126,7 +166,7 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
 
         // PostTrace Schedule PostTraceQueryAndReport Task
         POST_TRACE_SCHEDULE.scheduleAtFixedRate(
-                () -> this.PostTraceQueryAndReport(postTraceCenterURL, postTraceMap),
+                () -> this.PostTraceQueryAndReport(postTraceMap),
                 120,
                 postTraceQueryInterval,
                 TimeUnit.SECONDS
@@ -214,6 +254,23 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
                             if (checkSegmentReportable(segment)) {
                                 SegmentObject upstreamSegment = segment.transform();
                                 upstreamSegmentStreamObserver.onNext(upstreamSegment);
+
+                                // Report Error TraceId to Center
+                                JsonObject jsonObject = new JsonObject();
+                                jsonObject.addProperty("trace_id", upstreamSegment.getTraceId());
+                                String result = jsonObject.toString();
+                                RequestBody body = RequestBody.create(JSON, result);
+                                Request request = new Request.Builder()
+                                        .url(this.postTraceCenterURL + "/traceid")
+                                        .post(body)
+                                        .build();
+                                Response response = okHttpClient.newCall(request).execute();
+                                if (response.isSuccessful()) {
+                                    LOGGER.info("report trace_id " + upstreamSegment.getTraceId() + " to center successful");
+                                } else {
+                                    LOGGER.warn("report trace_id " + upstreamSegment.getTraceId() + " to center failed");
+                                }
+
                             } else {
                                 // Put Not Error TraceSegment in postTraceMap.
                                 this.postTraceMap.put(segment.getRelatedGlobalTrace().getId(), segment);
