@@ -164,13 +164,15 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
         carrier = new DataCarrier<>(CHANNEL_SIZE, BUFFER_SIZE, BufferStrategy.IF_POSSIBLE);
         carrier.consume(this, 1);
 
-        // PostTrace Schedule PostTraceQueryAndReport Task
-        POST_TRACE_SCHEDULE.scheduleAtFixedRate(
-                () -> this.PostTraceQueryAndReport(postTraceMap),
-                120,
-                postTraceQueryInterval,
-                TimeUnit.SECONDS
-        );
+        if (postTraceEnv != null) {
+            // PostTrace Schedule PostTraceQueryAndReport Task
+            POST_TRACE_SCHEDULE.scheduleAtFixedRate(
+                    () -> this.PostTraceQueryAndReport(postTraceMap),
+                    120,
+                    postTraceQueryInterval,
+                    TimeUnit.SECONDS
+            );
+        }
     }
 
     @Override
