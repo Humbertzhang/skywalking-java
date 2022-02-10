@@ -41,6 +41,10 @@ import org.apache.skywalking.apm.network.logging.v3.TextLog;
 import org.apache.skywalking.apm.network.logging.v3.TraceContext;
 import org.apache.skywalking.apm.toolkit.logging.common.log.ToolkitConfig;
 
+/*
+* TODO: find the questions
+* DONE: Modified Log Appender in Logback 1.x . Append to span Object right now.
+* */
 public class GRPCLogAppenderInterceptor implements InstanceMethodsAroundInterceptor {
 
     private LogReportServiceClient client;
@@ -57,7 +61,10 @@ public class GRPCLogAppenderInterceptor implements InstanceMethodsAroundIntercep
         }
         ILoggingEvent event = (ILoggingEvent) allArguments[0];
         if (Objects.nonNull(event)) {
-            client.produce(transform((OutputStreamAppender<ILoggingEvent>) objInst, event));
+            LogData logdata = transform((OutputStreamAppender<ILoggingEvent>) objInst, event);
+            ContextManager.getContext().activeSpan().getLogDataList().add(logdata);
+            //System.out.println("Logback add timestamp: " + System.currentTimeMillis() + "; LogData:" + logdata.toString());
+            client.produce(logdata);
         }
     }
 

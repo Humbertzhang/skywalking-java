@@ -18,10 +18,12 @@
 
 package org.apache.skywalking.apm.agent.core.context.trace;
 
+import java.util.List;
 import java.util.Map;
 import org.apache.skywalking.apm.agent.core.context.AsyncSpan;
 import org.apache.skywalking.apm.agent.core.context.tag.AbstractTag;
 import org.apache.skywalking.apm.agent.core.context.tag.Tags;
+import org.apache.skywalking.apm.network.logging.v3.LogData;
 import org.apache.skywalking.apm.network.trace.component.Component;
 import org.apache.skywalking.apm.network.trace.component.ComponentsDefine;
 
@@ -37,6 +39,8 @@ public interface AbstractSpan extends AsyncSpan {
     AbstractSpan setComponent(Component component);
 
     AbstractSpan setLayer(SpanLayer layer);
+
+    List<LogData> getLogDataList();
 
     /**
      * Set a key:value tag on the Span.

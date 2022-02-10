@@ -53,8 +53,14 @@ public class GRPCLogAppenderInterceptor implements InstanceMethodsAroundIntercep
             }
         }
         LogEvent event = (LogEvent) allArguments[0];
+//        if (Objects.nonNull(event)) {
+//            client.produce(transform((AbstractAppender) objInst, event));
+//        }
         if (Objects.nonNull(event)) {
-            client.produce(transform((AbstractAppender) objInst, event));
+            LogData logdata = transform((AbstractAppender) objInst, event);
+            ContextManager.getContext().activeSpan().getLogDataList().add(logdata);
+            //System.out.println("Log4jV2 add timestamp: " + System.currentTimeMillis() + "; LogData:" + logdata.toString());
+            client.produce(logdata);
         }
     }
 

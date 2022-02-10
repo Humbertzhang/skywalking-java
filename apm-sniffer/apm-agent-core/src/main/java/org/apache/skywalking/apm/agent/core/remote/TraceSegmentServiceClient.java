@@ -52,16 +52,21 @@ import org.apache.skywalking.apm.agent.core.context.trace.AbstractTracingSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.TraceSegment;
 import org.apache.skywalking.apm.agent.core.logging.api.ILog;
 import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
+
+import org.apache.skywalking.apm.agent.core.ml.lstm.GloveJudgeAnomaly;
 import org.apache.skywalking.apm.commons.datacarrier.DataCarrier;
 import org.apache.skywalking.apm.commons.datacarrier.buffer.BufferStrategy;
 import org.apache.skywalking.apm.commons.datacarrier.consumer.IConsumer;
 import org.apache.skywalking.apm.network.common.v3.Commands;
 import org.apache.skywalking.apm.network.language.agent.v3.SegmentObject;
 import org.apache.skywalking.apm.network.language.agent.v3.TraceSegmentReportServiceGrpc;
+import org.apache.skywalking.apm.network.logging.v3.LogData;
 
 import static org.apache.skywalking.apm.agent.core.conf.Config.Buffer.BUFFER_SIZE;
 import static org.apache.skywalking.apm.agent.core.conf.Config.Buffer.CHANNEL_SIZE;
 import static org.apache.skywalking.apm.agent.core.remote.GRPCChannelStatus.CONNECTED;
+
+import org.apache.skywalking.apm.agent.core.ml.lstm.JudgeAnomaly;
 
 @DefaultImplementor
 public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSegment>, TracingContextListener, GRPCChannelListener {
@@ -73,6 +78,10 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
     private volatile DataCarrier<TraceSegment> carrier;
     private volatile TraceSegmentReportServiceGrpc.TraceSegmentReportServiceStub serviceStub;
     private volatile GRPCChannelStatus status = GRPCChannelStatus.DISCONNECT;
+
+    // ML model
+    GloveJudgeAnomaly judgement = new GloveJudgeAnomaly();
+
 
     // Start PostTraceWork Init Codes
     private Map<String, TraceSegment> postTraceMap = new HashMap<>();
@@ -253,6 +262,8 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
                     } else {
                         LOGGER.info("check if segment is error");
                         for (TraceSegment segment: data) {
+                            LOGGER.info("for segment in data");
+
                             if (checkSegmentReportable(segment)) {
                                 SegmentObject upstreamSegment = segment.transform();
                                 upstreamSegmentStreamObserver.onNext(upstreamSegment);
@@ -309,9 +320,22 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
     }
 
     private boolean checkSegmentReportable(TraceSegment segment) {
+        LOGGER.info("checkSegmentReportable:" + segment.getTraceSegmentId());
         for (AbstractTracingSpan span : segment.getSpans()) {
             if (span.isErrorOccurred()) {
                 return true;
+            } else {
+                List<String> logs = new ArrayList<>();
+                LOGGER.info("span.logDataList.size():" + span.logDataList.size());
+                LOGGER.info("span.logDataList:" + span.logDataList);
+                for (LogData logData: span.logDataList) {
+                    String log = logData.getBody().getText().getText();
+                    logs.add(log);
+                }
+                LOGGER.info("start check judgement if is anomaly");
+                if (logs.size() > 0 && judgement.isAnomaly(logs)) {
+                    return true;
+                }
             }
         }
         return false;

@@ -1,3 +1,9 @@
+# csv txt and pt
+*.pt
+*templates.csv
+*structured.csv
+
+
 /build/
 target/
 .idea/

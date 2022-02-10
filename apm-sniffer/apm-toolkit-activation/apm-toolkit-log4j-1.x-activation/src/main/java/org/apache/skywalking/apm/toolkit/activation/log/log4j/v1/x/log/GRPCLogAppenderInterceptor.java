@@ -37,6 +37,10 @@ import org.apache.skywalking.apm.network.logging.v3.LogTags;
 import org.apache.skywalking.apm.network.logging.v3.TextLog;
 import org.apache.skywalking.apm.network.logging.v3.TraceContext;
 
+
+/*
+ * DONE: Modified Log Appender in Log4j 1.x . Append to span Object right now.
+ * */
 public class GRPCLogAppenderInterceptor implements InstanceMethodsAroundInterceptor {
 
     private LogReportServiceClient client;
@@ -52,7 +56,10 @@ public class GRPCLogAppenderInterceptor implements InstanceMethodsAroundIntercep
         }
         LoggingEvent event = (LoggingEvent) allArguments[0];
         if (Objects.nonNull(event)) {
-            client.produce(transform((AppenderSkeleton) objInst, event));
+            LogData logdata = transform((AppenderSkeleton) objInst, event);
+            ContextManager.getContext().activeSpan().getLogDataList().add(logdata);
+            //System.out.println("Log4jv1 add timestamp: " + System.currentTimeMillis() + "; LogData:" + logdata.toString());
+            client.produce(logdata);
         }
     }
 

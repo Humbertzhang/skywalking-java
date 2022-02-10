@@ -28,7 +28,7 @@ header:
     - '.gitmodules'
     - '.muse'
     - '.mvn'
-    - 'apm-checkstyle/CHECKSTYLE_HEAD'
+    - 'apm-checkstyle/backCHECKSTYLE_HEAD'
     - 'apm-protocol/apm-network/src/main/proto/.gitignore'
     - 'codeStyle.xml'
     - 'docker/.env'

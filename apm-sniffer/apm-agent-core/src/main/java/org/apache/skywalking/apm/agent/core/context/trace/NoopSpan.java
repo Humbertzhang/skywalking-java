@@ -18,9 +18,12 @@
 
 package org.apache.skywalking.apm.agent.core.context.trace;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.apache.skywalking.apm.agent.core.context.IgnoredTracerContext;
 import org.apache.skywalking.apm.agent.core.context.tag.AbstractTag;
+import org.apache.skywalking.apm.network.logging.v3.LogData;
 import org.apache.skywalking.apm.network.trace.component.Component;
 
 /**
@@ -39,6 +42,13 @@ public class NoopSpan implements AbstractSpan {
     @Override
     public AbstractSpan errorOccurred() {
         return this;
+    }
+
+    // Although useless, but have to add here due to implements.
+    public List<LogData> logDataList = new ArrayList<>();
+
+    public List<LogData> getLogDataList() {
+        return logDataList;
     }
 
     public void finish() {

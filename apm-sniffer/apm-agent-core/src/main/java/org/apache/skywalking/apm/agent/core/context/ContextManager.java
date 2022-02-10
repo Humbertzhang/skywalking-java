@@ -69,6 +69,11 @@ public class ContextManager implements BootService {
         return CONTEXT.get();
     }
 
+    public static AbstractTracerContext getContext() {
+        AbstractTracerContext context = CONTEXT.get();
+        return context;
+    }
+
     /**
      * @return the first global trace id when tracing. Otherwise, "N/A".
      */

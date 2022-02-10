@@ -35,6 +35,7 @@ import org.apache.skywalking.apm.agent.core.context.util.ThrowableTransformer;
 import org.apache.skywalking.apm.agent.core.dictionary.DictionaryUtil;
 import org.apache.skywalking.apm.network.language.agent.v3.SpanObject;
 import org.apache.skywalking.apm.network.language.agent.v3.SpanType;
+import org.apache.skywalking.apm.network.logging.v3.LogData;
 import org.apache.skywalking.apm.network.trace.component.Component;
 
 /**
@@ -46,6 +47,14 @@ public abstract class AbstractTracingSpan implements AbstractSpan {
      * Span id starts from 0.
      */
     protected int spanId;
+
+    // DONE: Add log to span
+    public List<LogData> logDataList = new ArrayList<>();
+
+    public List<LogData> getLogDataList() {
+        return logDataList;
+    }
+
     /**
      * Parent span id starts from 0. -1 means no parent span.
      */
